@@ -17,9 +17,8 @@ type JsonRpcResponse = {
   };
 };
 
-function createResponse(id: JsonRpcId, result: unknown): JsonRpcResponse {
-  return { jsonrpc: "2.0", id, result };
-}
+const APP_MCP_URL = process.env.APP_MCP_URL ?? "https://person-app-crud.vercel.app/api/mcp";
+const MCP_API_KEY = process.env.MCP_API_KEY ?? "";
 
 function createError(id: JsonRpcId, code: number, message: string): JsonRpcResponse {
   return {
@@ -29,43 +28,73 @@ function createError(id: JsonRpcId, code: number, message: string): JsonRpcRespo
   };
 }
 
-function handleRequest(req: JsonRpcRequest): JsonRpcResponse {
-  if (req.method === "initialize") {
-    return createResponse(req.id ?? null, {
-      serverInfo: { name: "person-search-mcp-server", version: "0.1.0" },
-      capabilities: {},
-    });
-  }
+async function forwardRequest(req: JsonRpcRequest): Promise<JsonRpcResponse> {
+  try {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
 
-  if (req.method === "tools/list") {
-    return createResponse(req.id ?? null, {
-      tools: [
-        { name: "person_create", description: "Create a person" },
-        { name: "person_list", description: "List/search people" },
-        { name: "person_get", description: "Get person by id" },
-        { name: "person_update", description: "Update person" },
-        { name: "person_delete", description: "Delete person" },
-      ],
-    });
-  }
+    if (MCP_API_KEY) {
+      headers["x-mcp-api-key"] = MCP_API_KEY;
+    }
 
-  if (req.method === "tools/call") {
-    return createResponse(req.id ?? null, {
-      content: [
-        {
-          type: "text",
-          text: "Tool execution scaffold is ready. Wire this to your app API or database.",
-        },
-      ],
+    const response = await fetch(APP_MCP_URL, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(req),
     });
-  }
 
-  return createError(req.id ?? null, -32601, `Method not found: ${req.method}`);
+    const text = await response.text();
+
+    if (!text) {
+      return createError(req.id ?? null, -32000, "Empty response from upstream MCP endpoint");
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      return createError(req.id ?? null, -32700, "Upstream returned invalid JSON");
+    }
+
+    if (typeof parsed === "object" && parsed !== null && "jsonrpc" in parsed) {
+      return parsed as JsonRpcResponse;
+    }
+
+    return createError(req.id ?? null, -32603, "Unexpected upstream response format");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to reach upstream MCP endpoint";
+    return createError(req.id ?? null, -32001, message);
+  }
 }
 
 process.stdin.setEncoding("utf8");
 
 let buffer = "";
+
+async function processLine(line: string) {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return;
+  }
+
+  try {
+    const req = JSON.parse(trimmed) as JsonRpcRequest;
+
+    if (req.jsonrpc !== "2.0" || typeof req.method !== "string") {
+      const res = createError(req.id ?? null, -32600, "Invalid Request");
+      process.stdout.write(`${JSON.stringify(res)}\n`);
+      return;
+    }
+
+    const res = await forwardRequest(req);
+    process.stdout.write(`${JSON.stringify(res)}\n`);
+  } catch {
+    const res = createError(null, -32700, "Parse error");
+    process.stdout.write(`${JSON.stringify(res)}\n`);
+  }
+}
+
 process.stdin.on("data", (chunk) => {
   buffer += chunk;
 
@@ -73,18 +102,6 @@ process.stdin.on("data", (chunk) => {
   buffer = lines.pop() ?? "";
 
   for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) {
-      continue;
-    }
-
-    try {
-      const req = JSON.parse(trimmed) as JsonRpcRequest;
-      const res = handleRequest(req);
-      process.stdout.write(`${JSON.stringify(res)}\n`);
-    } catch {
-      const res = createError(null, -32700, "Parse error");
-      process.stdout.write(`${JSON.stringify(res)}\n`);
-    }
+    void processLine(line);
   }
 });

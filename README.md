@@ -1,18 +1,23 @@
 # Person Search MCP Server
 
-Standalone MCP server repository for Person Search CRUD tools.
+Standalone MCP bridge repository for Person Search CRUD tools.
 
 ## Purpose
 
-This repository hosts the MCP server implementation used by Claude Desktop to manage Person records.
+This server forwards MCP JSON-RPC requests to your deployed app endpoint:
 
-## Planned Tools
+- `https://person-app-crud.vercel.app/api/mcp`
 
-- `person_create(name, email, phoneNumber)`
-- `person_list(query?)`
-- `person_get(id)`
-- `person_update(id, name?, email?, phoneNumber?)`
-- `person_delete(id)`
+## Environment Variables
+
+Create a `.env` file (or set env vars in your shell):
+
+```bash
+APP_MCP_URL=https://person-app-crud.vercel.app/api/mcp
+MCP_API_KEY=your_same_mcp_api_key
+```
+
+`MCP_API_KEY` is optional for local testing, but required if your app endpoint enforces header auth.
 
 ## Quick Start
 
@@ -21,9 +26,24 @@ pnpm install
 pnpm dev
 ```
 
+## Claude Desktop Bridge Example
+
+```json
+{
+  "mcpServers": {
+    "person-crud": {
+      "command": "npx",
+      "args": ["-y", "tsx", "src/server.ts"],
+      "env": {
+        "APP_MCP_URL": "https://person-app-crud.vercel.app/api/mcp",
+        "MCP_API_KEY": "your_same_mcp_api_key"
+      }
+    }
+  }
+}
+```
+
 ## Notes
 
-The production app integration lives at:
-
-- Main app repo: https://github.com/Alkaeya/person-app-crud
-- App MCP endpoint: `/api/mcp`
+- Main app repository: https://github.com/Alkaeya/person-app-crud
+- This repo is a transport bridge, not a second database source.
