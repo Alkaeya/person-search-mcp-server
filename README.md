@@ -26,6 +26,14 @@ pnpm install
 pnpm dev
 ```
 
+## Smoke Test
+
+Run a quick endpoint check for `initialize` and `tools/list`:
+
+```bash
+pnpm smoke
+```
+
 ## Claude Desktop Bridge Example
 
 ```json
